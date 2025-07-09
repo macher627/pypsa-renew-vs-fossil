@@ -14,6 +14,16 @@ import pypsa
 net_renew = build_system_with_renewables()
 net_fossil = build_system_fossil_only()
 
+def get_actual_co2_emission(network):
+    # Berechnet die tatsächlichen CO2-Emissionen auf Basis der Dispatch-Ergebnisse.
+    # 公式：备份机组总发电量 * 碳排系数
+    if "backup" in network.generators.index:
+        backup_gen = network.generators_t.p["backup"].sum()  # MWh
+        co2_factor = network.carriers.at["gas", "co2_emissions"]  # t/MWh
+        return backup_gen * co2_factor
+    else:
+        return 0
+
 # Durchführung der Optimierung für beide Systeme
 net_renew.optimize()
 net_fossil.optimize()
@@ -69,6 +79,11 @@ def plot_dispatch(df, title, filename):
 # Erstellung und Speicherung der Dispatch-Diagramme
 plot_dispatch(df_renew, "System A: Renewables + Backup", "dispatch_renewables.png")
 plot_dispatch(df_fossil, "System B: Fossil Only", "dispatch_fossil.png")
+actual_co2_renew = get_actual_co2_emission(net_renew)
+actual_co2_fossil = get_actual_co2_emission(net_fossil)
+
+print(f"System A (Erneuerbare): CO₂-Emissionen = {actual_co2_renew:.2f} t")
+print(f"System B (Fossil): CO₂-Emissionen = {actual_co2_fossil:.2f} t")
 
 # Funktion zur Durchführung einer einfachen Sensitivitätsanalyse:
 # - variiert einen Parameter
@@ -86,18 +101,18 @@ def run_sensitivity(param_name, param_values, **kwargs):
     df = pd.DataFrame(results)
     return df
 
-# --- Sensitivitätsanalyse 1: Strompreis (Backup-Marginalkosten) ---
-strompreise = [60, 100, 140, 180, 220]  # €/MWh
-df_strom = run_sensitivity("backup_marginal_cost", strompreise)
+# --- Sensitivitätsanalyse 1: Strompreis  ---
+marktpreise = [20, 40, 60, 80, 100]  # €/MWh
+df_export = run_sensitivity(param_name="export_price", param_values=marktpreise)
 
 plt.figure(figsize=(8, 5))
-plt.plot(df_strom["backup_marginal_cost"], df_strom["total_cost"], marker="o")
-plt.xlabel("Backup Grenzkosten (Strompreis) [€/MWh]")
+plt.plot(df_export["export_price"], df_export["total_cost"], marker="o")
+plt.xlabel("Marktpreis für Stromverkauf [€/MWh]")
 plt.ylabel("Gesamtsystemkosten [€]")
-plt.title("Sensitivität: Strompreis (Backup-Marginalkosten)")
+plt.title("Sensitivität: Marktpreis für Stromverkauf (Export-Preis)")
 plt.grid(True)
 plt.tight_layout()
-plt.savefig("sens_strompreis.png")
+plt.savefig("sens_exportpreis.png")
 plt.show()
 
 # --- Sensitivitätsanalyse 2: Wind-Investitionskosten ---
